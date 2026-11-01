@@ -13,7 +13,10 @@
   * { box-sizing:border-box; }
   html, body { margin:0; height:100%; overflow:hidden; font-family:Inter, system-ui, sans-serif; color:var(--ink); background:#e8ebef; }
   body.dark { background:#0b0f1a; }
-  #app { position:fixed; inset:0; }
+  #app { position:fixed; inset:0; z-index:1; }
+  #css3d { position:fixed; inset:0; z-index:0; pointer-events:none; }
+  #tvVideo { width:960px; height:540px; object-fit:cover; background:#000; display:block; }
+  .panel, .dims { z-index:2; }
   #app canvas { display:block; touch-action:none; }
   .panel { position:fixed; top:16px; left:16px; width:272px; max-height:calc(100% - 32px); overflow:auto;
     background:var(--glass); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
@@ -26,7 +29,7 @@
   .row { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; }
   .row.two { grid-template-columns:1fr 1fr; }
   button, label.btn { appearance:none; border:1px solid var(--line); background:transparent; color:var(--ink);
-    font:500 12px Inter, sans-serif; padding:8px 6px; border-radius:9px; cursor:pointer; text-align:center; transition:.15s; }
+    font:500 12px Inter, sans-serif; padding:8px 6px; border-radius:9px; cursor:pointer; text-align:center; transition:border-color .15s; }
   button:hover, label.btn:hover { border-color:var(--accent); }
   button.on { background:var(--ink); color:var(--glass); border-color:var(--ink); }
   body.dark button.on { background:var(--accent); color:#001018; border-color:var(--accent); }
@@ -38,6 +41,8 @@
   .dims { position:fixed; right:16px; bottom:16px; font-size:12px; color:var(--muted); background:var(--glass);
     border:1px solid var(--line); border-radius:12px; padding:10px 12px; backdrop-filter:blur(10px); line-height:1.5; }
   .dims b { color:var(--ink); font-weight:600; }
+  .np { font-size:12px; color:var(--muted); margin-bottom:8px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .np b { color:var(--ink); font-weight:600; }
   #loading { position:fixed; inset:0; display:grid; place-items:center; font-size:13px; color:var(--muted); background:inherit; z-index:10; transition:opacity .4s; }
   .toggle-ui { display:none; position:fixed; top:12px; left:12px; z-index:5; }
   @media (max-width:640px) {
@@ -45,6 +50,7 @@
     .dims { display:none; }
   }
 </style>
+<script src="img/assets.js"></script>
 <script type="importmap">
 { "imports": {
   "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
@@ -53,7 +59,9 @@
 </script>
 </head>
 <body>
+<div id="css3d"></div>
 <div id="app"></div>
+<video id="tvVideo" muted playsinline preload="auto"></video>
 <div id="loading">Memuat preview 3D...</div>
 
 <div class="panel">
@@ -74,6 +82,19 @@
     <button id="tGlasses" class="on">Kacamata</button>
     <button id="tDark">Mode gelap</button>
     <button id="tScreen" class="on">Konten layar</button>
+    <button id="tLed" class="on">Lampu LED</button>
+  </div>
+
+  <h4>Kaca backdrop <span id="glassVal" style="float:right">80%</span></h4>
+  <input type="range" id="glass" min="30" max="100" value="80" style="width:100%;accent-color:var(--accent)">
+
+  <h4>Playlist TV</h4>
+  <div class="np" id="nowPlaying">Memuat video...</div>
+  <div class="row">
+    <button id="pPrev" title="Sebelumnya">&#9664;&#9664;</button>
+    <button id="pPlay" title="Play / pause">&#10074;&#10074;</button>
+    <button id="pNext" title="Berikutnya">&#9654;&#9654;</button>
+    <button id="pSound" title="Suara">Suara</button>
   </div>
 
   <h4>Ganti artwork (PNG/JPG)</h4>
@@ -86,13 +107,14 @@
 
   <button class="primary" id="shot">Simpan screenshot PNG</button>
   <p class="note">Drag untuk memutar, scroll untuk zoom, klik kanan untuk geser.<br>
-  Artwork backdrop rasio 4:3 (1200 x 900), meja rasio 1200 x 580, layar 16:9.</p>
+  Artwork default: img/backdrop.png dan img/alas.png. Setelah mengganti PNG, jalankan update-assets.py agar ikut terbaca saat file dibuka langsung. Rasio: backdrop 876 x 476, alas 876 x 440, layar 16:9.</p>
+  <p class="note" id="srvNote" style="display:none;color:#d9480f">Gambar di folder img belum terbaca. Jalankan <code>python3 update-assets.py</code> di folder ini untuk membuat img/assets.js, lalu muat ulang halaman.</p>
 </div>
 
 <div class="dims">
   <b>Perkiraan dimensi</b><br>
-  L 120 x D 64 x T 90 cm<br>
-  Layar 38" 16:9 · 4 riser display<br>
+  L 120 x D 61 x T 81 cm · backdrop kaca 12 mm<br>
+  Layar 38" 16:9 · LED putih keliling<br>
   Preview v1 · November 2026
 </div>
 
@@ -100,18 +122,19 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { CSS3DRenderer, CSS3DObject } from 'three/addons/renderers/CSS3DRenderer.js';
 
 /* ---------- Dimensi (meter), diturunkan dari frame tampak depan, samping, atas ---------- */
 const DIM = {
   W: 1.20,          // lebar
-  D: 0.58,          // kedalaman meja (depan ke backdrop)
+  D: 0.60,          // kedalaman meja (depan ke backdrop), rasio img/alas.png 876x440
   hf: 0.10,         // tinggi meja sisi depan
   hb: 0.155,        // tinggi meja sisi belakang (miring naik ke belakang)
-  H: 0.90,          // tinggi backdrop
-  T: 0.06,          // tebal backdrop
-  rTop: 0.08,       // radius sudut kanan atas backdrop
-  rFront: 0.06,     // radius sudut depan meja
-  sw: 0.846, sh: 0.476, sBottom: 0.27   // layar 38" 16:9
+  H: 0.155 + 0.652, // tinggi backdrop: tinggi meja belakang + bagian artwork (rasio img/backdrop.png 876x476)
+  T: 0.012,         // tebal backdrop kaca (12 mm)
+  rTop: 0.07,       // radius sudut atas backdrop
+  rFront: 0.068,    // radius sudut depan meja
+  sw: 0.846, sh: 0.476, sBottom: 0.224  // layar 38" 16:9
 };
 const K = (DIM.hb - DIM.hf) / DIM.D;
 const slopeAtZ = z => DIM.hb - K * (z + DIM.D);   // z: 0 = depan, -D = belakang
@@ -123,7 +146,7 @@ const FONT_UI = 'Inter, "Helvetica Neue", Arial, sans-serif';
 const app = document.getElementById('app');
 let renderer;
 try {
-  renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+  renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, alpha: true });
 } catch (e) {
   document.getElementById('loading').textContent = 'Browser ini tidak mendukung WebGL.';
   throw e;
@@ -136,6 +159,10 @@ renderer.toneMappingExposure = 1.0;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 app.appendChild(renderer.domElement);
+// layer CSS3D di bawah canvas WebGL: tempat elemen <video> TV
+const cssRenderer = new CSS3DRenderer();
+cssRenderer.setSize(innerWidth, innerHeight);
+document.getElementById('css3d').appendChild(cssRenderer.domElement);
 const MAX_ANISO = renderer.capabilities.getMaxAnisotropy();
 
 const scene = new THREE.Scene();
@@ -378,7 +405,9 @@ const meshes = [];
 function addMesh(m, cast = true, receive = true) { m.castShadow = cast; m.receiveShadow = receive; scene.add(m); meshes.push(m); return m; }
 
 let backdropTexDefault, topTexDefault, screenTexDefault;
-let backdropMat, topMat, screenMat;
+let backdropMat, topMat, screenMat, baseSideMat, screenMesh, cssScreen;
+const holeMat = new THREE.MeshBasicMaterial({ color: 0x000000, opacity: 0, blending: THREE.NoBlending, toneMapped: false, fog: false });
+const screenOffMat = new THREE.MeshBasicMaterial({ color: 0x030303, toneMapped: false });
 const glassesGroup = new THREE.Group();
 
 function buildBase() {
@@ -401,19 +430,82 @@ function buildBase() {
   pos.needsUpdate = nor.needsUpdate = uv.needsUpdate = true;
   geo.computeBoundingSphere();
   topMat = new THREE.MeshPhysicalMaterial({ map: topTexDefault, roughness: 0.42, clearcoat: 0.6, clearcoatRoughness: 0.18 });
-  const sideMat = new THREE.MeshStandardMaterial({ color: 0x01041a, roughness: 0.45, metalness: 0.15 });
-  addMesh(new THREE.Mesh(geo, [topMat, sideMat]));
+  // sisi alas: akrilik putih menyala
+  baseSideMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xf2f7ff, emissiveIntensity: 0.9, roughness: 0.35 });
+  addMesh(new THREE.Mesh(geo, [topMat, baseSideMat]));
 
   // lampu teal di tepi depan atas
   const gc = makeCanvas(8, 128), gx = gc.getContext('2d');
   const gg = gx.createLinearGradient(0, 0, 0, 128);
-  gg.addColorStop(0, 'rgba(120,250,255,1)'); gg.addColorStop(0.08, 'rgba(0,215,235,.95)'); gg.addColorStop(0.45, 'rgba(0,150,190,.35)'); gg.addColorStop(1, 'rgba(0,120,170,0)');
+  gg.addColorStop(0, 'rgba(255,255,255,1)'); gg.addColorStop(0.1, 'rgba(235,245,255,.75)'); gg.addColorStop(0.45, 'rgba(200,225,255,.22)'); gg.addColorStop(1, 'rgba(200,225,255,0)');
   gx.fillStyle = gg; gx.fillRect(0, 0, 8, 128);
   const glowTex = toTex(gc);
   const glow = new THREE.Mesh(new THREE.PlaneGeometry(W - 2 * r, 0.05),
     new THREE.MeshBasicMaterial({ map: glowTex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
   glow.position.set(0, DIM.hf - 0.025, 0.0015);
-  scene.add(glow);
+  ledGroup.add(glow);
+}
+
+/* ---------- Strip LED putih di semua sisi ---------- */
+const ledGroup = new THREE.Group();
+const ledCore = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false });
+const ledHalo1 = new THREE.MeshBasicMaterial({ color: 0xeaf4ff, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+const ledHalo2 = new THREE.MeshBasicMaterial({ color: 0xdfeeff, transparent: true, opacity: 0.07, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+const riserGlowMat = new THREE.MeshBasicMaterial({ color: 0xf6f9ff, toneMapped: false });
+function ledStrip(points, closed = false) {
+  const curve = new THREE.CatmullRomCurve3(points, closed, 'centripetal');
+  const seg = Math.max(64, points.length * 4);
+  ledGroup.add(new THREE.Mesh(new THREE.TubeGeometry(curve, seg, 0.0032, 8, closed), ledCore));
+  ledGroup.add(new THREE.Mesh(new THREE.TubeGeometry(curve, seg, 0.010, 10, closed), ledHalo1));
+  ledGroup.add(new THREE.Mesh(new THREE.TubeGeometry(curve, seg, 0.024, 12, closed), ledHalo2));
+}
+function arcPts(cx, cy, r, a0, a1, n, map) {
+  const out = [];
+  for (let i = 0; i <= n; i++) { const a = a0 + (a1 - a0) * i / n; out.push(map(cx + Math.cos(a) * r, cy + Math.sin(a) * r)); }
+  return out;
+}
+function lineFill(a, b, n) { const out = []; for (let i = 1; i < n; i++) out.push(a.clone().lerp(b, i / n)); return out; }
+function buildLeds() {
+  const { W, D, H, hb, rTop, rFront } = DIM;
+  // keliling depan backdrop: kiri, atas, kanan
+  const zb = -D + 0.004, inset = 0.012, x0 = -W / 2 + inset, x1 = W / 2 - inset, yt = H - inset, r = rTop - inset;
+  const V = (x, y) => new THREE.Vector3(x, y, zb);
+  let pts = [V(x0, hb + 0.002), ...lineFill(V(x0, hb), V(x0, yt - r), 6), V(x0, yt - r)];
+  pts.push(...arcPts(x0 + r, yt - r, r, Math.PI, Math.PI / 2, 10, V).slice(1));
+  pts.push(...lineFill(V(x0 + r, yt), V(x1 - r, yt), 10), V(x1 - r, yt));
+  pts.push(...arcPts(x1 - r, yt - r, r, Math.PI / 2, 0, 10, V).slice(1));
+  pts.push(...lineFill(V(x1, yt - r), V(x1, hb), 6), V(x1, hb + 0.002));
+  ledStrip(pts);
+  // keliling tepi atas alas: sisi kiri, depan, sisi kanan (mengikuti kemiringan)
+  const o = 0.003, rr = rFront + o, xs = W / 2 + o;
+  const B = (x, z) => new THREE.Vector3(x, slopeAtZ(Math.min(0, z)) - 0.006, z);
+  pts = [B(-xs, -D + 0.004), ...lineFill(B(-xs, -D), B(-xs, -rFront), 8), B(-xs, -rFront)];
+  pts.push(...arcPts(-W / 2 + rFront, -rFront, rr, Math.PI, Math.PI / 2, 10, (x, z) => B(x, z)).slice(1));
+  pts.push(...lineFill(B(-W / 2 + rFront, o), B(W / 2 - rFront, o), 12), B(W / 2 - rFront, o));
+  pts.push(...arcPts(W / 2 - rFront, -rFront, rr, Math.PI / 2, 0, 10, (x, z) => B(x, z)).slice(1));
+  pts.push(...lineFill(B(xs, -rFront), B(xs, -D), 8), B(xs, -D + 0.004));
+  ledStrip(pts);
+  // tepi bawah alas, garis tipis di dekat lantai
+  const F = (x, z) => new THREE.Vector3(x, 0.008, z);
+  pts = [F(-xs, -D - DIM.T), ...lineFill(F(-xs, -D - DIM.T), F(-xs, -rFront), 8), F(-xs, -rFront)];
+  pts.push(...arcPts(-W / 2 + rFront, -rFront, rr, Math.PI, Math.PI / 2, 10, F).slice(1));
+  pts.push(...lineFill(F(-W / 2 + rFront, o), F(W / 2 - rFront, o), 12), F(W / 2 - rFront, o));
+  pts.push(...arcPts(W / 2 - rFront, -rFront, rr, Math.PI / 2, 0, 10, F).slice(1));
+  pts.push(...lineFill(F(xs, -rFront), F(xs, -D - DIM.T), 8), F(xs, -D - DIM.T));
+  ledStrip(pts);
+  // pendar cahaya di lantai
+  const c = makeCanvas(512, 320), g = c.getContext('2d');
+  g.filter = 'blur(22px)'; g.strokeStyle = 'rgba(255,255,255,0.9)'; g.lineWidth = 26;
+  g.beginPath(); g.roundRect(60, 60, 392, 200, 22); g.stroke();
+  const fg = new THREE.Mesh(new THREE.PlaneGeometry(W * 1.3, (D + DIM.T) * 1.6),
+    new THREE.MeshBasicMaterial({ map: toTex(c), transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
+  fg.rotation.x = -Math.PI / 2; fg.position.set(0, 0.001, -(D + DIM.T) / 2);
+  ledGroup.add(fg);
+  // sedikit cahaya putih nyata ke sekitar
+  const pl1 = new THREE.PointLight(0xffffff, 0.5, 1.0, 2); pl1.position.set(-W / 2 - 0.05, 0.4, -D + 0.05);
+  const pl2 = pl1.clone(); pl2.position.x = W / 2 + 0.05;
+  ledGroup.add(pl1, pl2);
+  scene.add(ledGroup);
 }
 
 function buildBackdrop() {
@@ -421,20 +513,26 @@ function buildBackdrop() {
   const s = new THREE.Shape();
   s.moveTo(-W / 2, 0); s.lineTo(W / 2, 0); s.lineTo(W / 2, H - r);
   s.absarc(W / 2 - r, H - r, r, 0, Math.PI / 2, false);
-  s.lineTo(-W / 2, H); s.lineTo(-W / 2, 0);
+  s.lineTo(-W / 2 + r, H);
+  s.absarc(-W / 2 + r, H - r, r, Math.PI / 2, Math.PI, false);
+  s.lineTo(-W / 2, 0);
   const geo = new THREE.ExtrudeGeometry(s, { depth: T, bevelEnabled: false, curveSegments: 24 });
   const pos = geo.attributes.position, nor = geo.attributes.normal, uv = geo.attributes.uv;
   for (let i = 0; i < pos.count; i++) {
     const nz = nor.getZ(i);
-    if (nz > 0.5) uv.setXY(i, (pos.getX(i) + W / 2) / W, pos.getY(i) / H);
-    else if (nz < -0.5) uv.setXY(i, 0.5, 0.02);
+    // artwork dimulai dari permukaan meja belakang (hb) sampai puncak backdrop
+    if (nz > 0.5) uv.setXY(i, (pos.getX(i) + W / 2) / W, Math.max(0, (pos.getY(i) - DIM.hb) / (H - DIM.hb)));
+    else if (nz < -0.5) uv.setXY(i, (pos.getX(i) + W / 2) / W, Math.max(0, (pos.getY(i) - DIM.hb) / (H - DIM.hb)));
   }
   uv.needsUpdate = true;
-  backdropMat = new THREE.MeshStandardMaterial({ map: backdropTexDefault, roughness: 0.6, metalness: 0.0 });
-  const sideMat = new THREE.MeshStandardMaterial({ color: 0x01041a, roughness: 0.5, metalness: 0.1 });
+  // kaca dengan artwork tercetak, sedikit tembus pandang
+  backdropMat = new THREE.MeshPhysicalMaterial({ map: backdropTexDefault, transparent: true, opacity: 0.8,
+    roughness: 0.06, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.04, ior: 1.5, specularIntensity: 1 });
+  const sideMat = new THREE.MeshPhysicalMaterial({ color: 0xbfe9ee, transparent: true, opacity: 0.6, roughness: 0.05, clearcoat: 1 });
   const m = new THREE.Mesh(geo, [backdropMat, sideMat]);
+  m.renderOrder = 2;
   m.position.z = -D - T;
-  addMesh(m);
+  addMesh(m, false, false);
 }
 
 function buildScreen() {
@@ -444,10 +542,16 @@ function buildScreen() {
     new THREE.MeshPhysicalMaterial({ color: 0x050505, roughness: 0.3, metalness: 0.2, clearcoat: 1, clearcoatRoughness: 0.1 }));
   body.position.set(0, cy, bz);
   addMesh(body);
-  screenMat = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xffffff, emissiveMap: screenTexDefault, roughness: 0.12, metalness: 0, toneMapped: false });
-  const scr = new THREE.Mesh(new THREE.PlaneGeometry(sw, sh), screenMat);
-  scr.position.set(0, cy, bz + depth / 2 + 0.0006);
-  scene.add(scr);
+  screenMat = new THREE.MeshBasicMaterial({ map: screenTexDefault, toneMapped: false });
+  screenMesh = new THREE.Mesh(new THREE.PlaneGeometry(sw, sh), screenMat);
+  screenMesh.position.set(0, cy, bz + depth / 2 + 0.0006);
+  scene.add(screenMesh);
+  // video tampil lewat "lubang" transparan di canvas WebGL, benda di depannya tetap menutupi
+  cssScreen = new CSS3DObject(document.getElementById('tvVideo'));
+  cssScreen.position.copy(screenMesh.position);
+  cssScreen.scale.setScalar(sw / 960);
+  cssScreen.visible = false;
+  scene.add(cssScreen);
 }
 
 function pillShape(w, d) {
@@ -462,8 +566,8 @@ const RISERS = [];
 function buildRisers() {
   const w = 0.32, d = 0.12, bev = 0.004;
   const rows = [
-    { dBack: 0.10, lift: 0.09, xs: [-0.28, 0.28] },   // baris belakang, lebih tinggi
-    { dBack: 0.235, lift: 0.05, xs: [-0.333, 0.333] } // baris depan, lebih rendah
+    { dBack: 0.17, lift: 0.09, xs: [-0.28, 0.28] },   // baris belakang, lebih tinggi
+    { dBack: 0.305, lift: 0.05, xs: [-0.333, 0.333] } // baris depan, lebih rendah (dimajukan ke depan)
   ];
   const mat = new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.3, clearcoat: 0.5, clearcoatRoughness: 0.2 });
   const cTop = new THREE.Color('#d4d4d4'), cBot = new THREE.Color('#7a7a7a'), tmp = new THREE.Color();
@@ -490,6 +594,12 @@ function buildRisers() {
       m.position.set(x, bottomY, zc);
       addMesh(m);
       RISERS.push({ x, z: zc, top: topY, side: Math.sign(x) });
+      // permukaan atas riser menyala (panel lampu putih) + garis LED di tepinya
+      const plate = new THREE.Mesh(new THREE.ShapeGeometry(pillShape(w - 0.006, d - 0.006), 24).rotateX(-Math.PI / 2), riserGlowMat);
+      plate.position.set(x, topY + 0.0008, zc);
+      ledGroup.add(plate);
+      const outline = pillShape(w - 0.002, d - 0.002).getSpacedPoints(90).map(p => new THREE.Vector3(x + p.x, topY + 0.001, zc - p.y));
+      ledStrip(outline, true);
     }
   }
 }
@@ -603,8 +713,74 @@ const tg = (id, fn) => { const el = document.getElementById(id); el.addEventList
 tg('tRotate', on => controls.autoRotate = on);
 tg('tGlasses', on => glassesGroup.visible = on);
 tg('tDark', on => setTheme(on));
-let slideshow = true, customScreen = null;
-tg('tScreen', on => { screenMat.emissiveIntensity = on ? 1 : 0; });
+tg('tLed', on => { ledGroup.visible = on; baseSideMat.emissiveIntensity = on ? 0.9 : 0.05; });
+document.getElementById('glass').addEventListener('input', e => {
+  const v = +e.target.value; document.getElementById('glassVal').textContent = v + '%';
+  backdropMat.opacity = v / 100;
+});
+let slideshow = true, customScreen = null, screenOn = true, screenMode = 'canvas';
+/* Mode layar: 'video' = elemen <video> asli di layer CSS3D (tidak diblokir di file://),
+   'canvas' = slideshow / gambar upload sebagai tekstur WebGL. */
+function applyScreen() {
+  if (!screenOn) { screenMesh.material = screenOffMat; cssScreen.visible = false; return; }
+  if (screenMode === 'video') { screenMesh.material = holeMat; cssScreen.visible = true; }
+  else { screenMesh.material = screenMat; cssScreen.visible = false; }
+}
+function setScreenMode(m) { screenMode = m; slideshow = (m === 'canvas' && screenMat.map === screenTexDefault); applyScreen(); }
+tg('tScreen', on => { screenOn = on; applyScreen(); });
+
+/* ---------- Playlist video TV (file di folder video/) ----------
+   Tambah, hapus, atau ubah urutan video cukup di daftar ini. */
+const PLAYLIST = [
+  'video/axina-1.webm',
+  'video/axina-2.webm',
+  'video/axina-3.webm',
+  'video/cooking.webm',
+  'video/cycling.webm',
+  'video/tenis.webm'
+];
+const tvVideo = document.getElementById('tvVideo');
+let plIndex = 0, plFails = 0;
+const npEl = document.getElementById('nowPlaying');
+const btnPlay = document.getElementById('pPlay'), btnSound = document.getElementById('pSound');
+
+function showSlideshow(msg) {
+  screenMat.map = screenTexDefault; screenMat.needsUpdate = true;
+  setScreenMode('canvas');
+  npEl.innerHTML = msg;
+}
+function playIndex(i) {
+  customScreen = null; tvVideo.loop = false;
+  plIndex = (i + PLAYLIST.length) % PLAYLIST.length;
+  tvVideo.src = PLAYLIST[plIndex];
+  tvVideo.play().catch(() => {});
+}
+tvVideo.addEventListener('playing', () => {
+  plFails = 0;
+  setScreenMode('video');
+  btnPlay.innerHTML = '&#10074;&#10074;';
+  if (customScreen) return;
+  const name = PLAYLIST[plIndex].split('/').pop();
+  npEl.innerHTML = `<b>${plIndex + 1}/${PLAYLIST.length}</b> &nbsp;${name}`;
+});
+tvVideo.addEventListener('ended', () => { if (!customScreen) playIndex(plIndex + 1); });
+tvVideo.addEventListener('error', () => {
+  if (customScreen) return;
+  plFails++;
+  if (plFails >= PLAYLIST.length) { showSlideshow('Video di folder video tidak ditemukan'); return; }
+  playIndex(plIndex + 1);
+});
+function startPlaylist() { if (PLAYLIST.length) playIndex(0); else showSlideshow('Playlist kosong'); }
+document.getElementById('pPrev').addEventListener('click', () => playIndex(plIndex - 1));
+document.getElementById('pNext').addEventListener('click', () => playIndex(plIndex + 1));
+btnPlay.addEventListener('click', () => {
+  if (tvVideo.paused) { tvVideo.play(); btnPlay.innerHTML = '&#10074;&#10074;'; }
+  else { tvVideo.pause(); btnPlay.innerHTML = '&#9654;'; }
+});
+btnSound.addEventListener('click', () => {
+  tvVideo.muted = !tvVideo.muted; btnSound.classList.toggle('on', !tvVideo.muted);
+  if (!tvVideo.muted) tvVideo.play();
+});
 
 function loadImage(file, cb) {
   const url = URL.createObjectURL(file);
@@ -620,33 +796,43 @@ document.getElementById('fTop').addEventListener('change', e => {
 });
 document.getElementById('fScreen').addEventListener('change', e => {
   const f = e.target.files[0]; if (!f) return;
-  if (customScreen && customScreen.video) customScreen.video.pause();
+  customScreen = { name: f.name };
+  npEl.textContent = 'Layar: ' + f.name;
   if (f.type.startsWith('video')) {
-    const v = document.createElement('video');
-    v.src = URL.createObjectURL(f); v.loop = true; v.muted = true; v.playsInline = true; v.play();
-    const vt = new THREE.VideoTexture(v); vt.colorSpace = THREE.SRGBColorSpace;
-    customScreen = { video: v }; slideshow = false;
-    screenMat.emissiveMap = vt; screenMat.needsUpdate = true;
+    tvVideo.loop = true; tvVideo.src = URL.createObjectURL(f); tvVideo.play().catch(() => {});
   } else {
-    loadImage(f, t => { customScreen = {}; slideshow = false; screenMat.emissiveMap = t; screenMat.needsUpdate = true; });
+    tvVideo.pause();
+    loadImage(f, t => { screenMat.map = t; screenMat.needsUpdate = true; setScreenMode('canvas'); });
   }
 });
 document.getElementById('resetArt').addEventListener('click', () => {
-  if (customScreen && customScreen.video) customScreen.video.pause();
-  customScreen = null; slideshow = true;
-  backdropMat.map = backdropTexDefault; topMat.map = topTexDefault; screenMat.emissiveMap = screenTexDefault;
+  backdropMat.map = backdropTexDefault; topMat.map = topTexDefault; screenMat.map = screenTexDefault;
   backdropMat.needsUpdate = topMat.needsUpdate = screenMat.needsUpdate = true;
   ['fBackdrop', 'fTop', 'fScreen'].forEach(id => document.getElementById(id).value = '');
+  startPlaylist();
 });
 document.getElementById('shot').addEventListener('click', () => {
+  // Saat dibuka dari http(s), frame video ikut terekam. Dari file:// browser tidak mengizinkan,
+  // jadi layar diisi slideshow untuk screenshot.
+  const prev = screenMesh.material;
+  let tmpTex = null;
+  if (screenMode === 'video' && screenOn) {
+    if (location.protocol !== 'file:') {
+      tmpTex = new THREE.VideoTexture(tvVideo); tmpTex.colorSpace = THREE.SRGBColorSpace;
+      screenMesh.material = new THREE.MeshBasicMaterial({ map: tmpTex, toneMapped: false });
+    } else { drawScreen(performance.now() / 1000); screenTexDefault.needsUpdate = true; screenMesh.material = new THREE.MeshBasicMaterial({ map: screenTexDefault, toneMapped: false }); }
+  }
   renderer.render(scene, camera);
   const a = document.createElement('a');
   a.href = renderer.domElement.toDataURL('image/png');
   a.download = 'moox-display-preview.png'; a.click();
+  if (screenMesh.material !== prev) { screenMesh.material.dispose(); screenMesh.material = prev; }
+  if (tmpTex) tmpTex.dispose();
 });
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
+  cssRenderer.setSize(innerWidth, innerHeight);
 });
 
 /* ---------- Mulai ---------- */
@@ -659,15 +845,32 @@ async function fontsReady() {
   } catch (e) { /* pakai font cadangan */ }
 }
 
+function loadUrlTex(url) {
+  return new Promise(res => new THREE.TextureLoader().load(url,
+    t => { t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = MAX_ANISO; res(t); },
+    undefined, () => res(null)));
+}
+
 (async function init() {
   await fontsReady();
-  const bc = makeCanvas(2048, 1536); drawBackdrop(bc.getContext('2d'), 2048, 1536); backdropTexDefault = toTex(bc);
-  const tc = makeCanvas(3072, 1485); drawTop(tc.getContext('2d'), 3072, 1485); topTexDefault = toTex(tc);
+  // dari file:// gambar dibaca dari img/assets.js (data tertanam), dari server dibaca langsung dari PNG
+  const A = window.MOOX_ASSETS || {};
+  const isFile = location.protocol === 'file:';
+  const pick = (name, png) => (isFile && A[name]) ? A[name] : png;
+  let [imgBackdrop, imgAlas] = await Promise.all([loadUrlTex(pick('backdrop', 'img/backdrop.png')), loadUrlTex(pick('alas', 'img/alas.png'))]);
+  if (!imgBackdrop && A.backdrop) imgBackdrop = await loadUrlTex(A.backdrop);
+  if (!imgAlas && A.alas) imgAlas = await loadUrlTex(A.alas);
+  if (imgBackdrop) backdropTexDefault = imgBackdrop;
+  else { const bc = makeCanvas(2048, 1113); drawBackdrop(bc.getContext('2d'), 2048, 1536); backdropTexDefault = toTex(bc); }
+  if (imgAlas) topTexDefault = imgAlas;
+  else { const tc = makeCanvas(3072, 1536); drawTop(tc.getContext('2d'), 3072, 1485); topTexDefault = toTex(tc); }
+  if (!imgBackdrop || !imgAlas) document.getElementById('srvNote').style.display = 'block';
   drawScreen(0); screenTexDefault = toTex(screenCanvas);
 
-  buildBase(); buildBackdrop(); buildScreen(); buildRisers(); buildGlasses();
+  buildBase(); buildBackdrop(); buildScreen(); buildRisers(); buildGlasses(); buildLeds();
   setTheme(false);
   goView('persp', true);
+  startPlaylist();
 
   const clock = new THREE.Clock(); let acc = 0;
   renderer.setAnimationLoop(() => {
@@ -682,6 +885,7 @@ async function fontsReady() {
     controls.update();
     if (slideshow && acc > 1 / 30) { drawScreen(clock.elapsedTime); screenTexDefault.needsUpdate = true; acc = 0; }
     renderer.render(scene, camera);
+    cssRenderer.render(scene, camera);
   });
   const ld = document.getElementById('loading'); ld.style.opacity = 0; setTimeout(() => ld.remove(), 450);
 })();
