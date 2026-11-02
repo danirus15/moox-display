@@ -21,6 +21,8 @@ files = {
     "alt2Alas": root / "img" / "alt2" / "alas.png",
     "alt3Backdrop": root / "img" / "alt3" / "backdrop.png",
     "alt3Alas": root / "img" / "alt3" / "alas.png",
+    "alt3PriceQr": root / "img" / "alt3" / "price-qr.png",
+    "mooxApp": root / "img" / "moox-app.png",
 }
 MIME = {".png": "image/png", ".svg": "image/svg+xml", ".jpg": "image/jpeg"}
 
