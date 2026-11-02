@@ -89,6 +89,7 @@
     <button id="tDark">Mode gelap</button>
     <button id="tScreen" class="on">Konten layar</button>
     <button id="tLed" class="on">Lampu LED</button>
+    <button id="tWhiteC" style="display:none" title="Khusus Alternatif C">Alas putih</button>
   </div>
 
   <h4>Transparansi kaca <span id="glassVal" style="float:right">80%</span></h4>
@@ -121,6 +122,7 @@
   <span>Preview alternatif</span>
   <button data-alt="A" class="on">A · Booth Countertop</button>
   <button data-alt="B">B · Experience Table</button>
+  <button data-alt="C">C · Lightbox Counter</button>
 </div>
 
 <div class="dims" id="dims"></div>
@@ -430,7 +432,7 @@ function drawScreen(t) {
 
 /* ---------- Geometri ---------- */
 const meshes = [];
-const altA = new THREE.Group(), altB = new THREE.Group();
+const altA = new THREE.Group(), altB = new THREE.Group(), altC = new THREE.Group();
 let curGroup = altA;   // grup tempat builder menambahkan objek
 function addMesh(m, cast = true, receive = true) { m.castShadow = cast; m.receiveShadow = receive; curGroup.add(m); meshes.push(m); return m; }
 
@@ -876,6 +878,163 @@ function buildAltB() {
   curGroup = altA;
 }
 
+/* ================= ALTERNATIF C: Lightbox Counter =================
+   Gaya counter lightbox: meja dengan rim akrilik putih menyala, kaki hitam,
+   backdrop tegak dengan layar, garis cahaya di sambungan, ring cahaya + tiang stand per produk.
+   Artwork dari img/alt3/backdrop.png (876 x 1056) dan img/alt3/alas.png (1790 x 899). */
+const TC = { W: 1.0, D: 0.53, H: 0.95, slab: 0.045, rim: 0.03, bT: 0.03, sw: 0.6, sh: 0.6 * 9 / 16, bH: 0.8 };
+// artwork portrait (876 x 1056) dipotong dari bawah agar tidak gepeng; logo di atas tetap utuh
+const ledGroupC = new THREE.Group();
+const glassesGroupC = new THREE.Group();
+let alt3BackdropTex = null, alt3AlasTex = null, rimMatC, screenMeshC;
+let slabC, slabArtMats, artC, ringMat, ringHalo, alasWhiteC = false;
+/* Opsi Alternatif C: alas akrilik putih menyala, tanpa img/alt3/alas.png */
+function setAlasWhiteC(on) {
+  alasWhiteC = on;
+  slabC.material = on ? rimMatC : slabArtMats;
+  artC.visible = !on;
+  ringMat.color.set(on ? 0x00b8d4 : 0xffffff);
+  ringHalo.visible = !on;
+  slabC.receiveShadow = on;
+  const t = on ? 'alas akrilik putih menyala' : 'warna mengikuti artwork alas';
+  DIMS_TEXT.C = DIMS_TEXT.C.replace(/alas akrilik putih menyala|warna mengikuti artwork alas/, t);
+  if (currentAlt === 'C') document.getElementById('dims').innerHTML = DIMS_TEXT.C;
+}
+
+function drawPhoneUI(ctx, w, h) {
+  let g = ctx.createLinearGradient(0, 0, 0, h);
+  g.addColorStop(0, '#040a24'); g.addColorStop(0.55, '#06264a'); g.addColorStop(1, '#00a7c2');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+  ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.font = `600 26px ${FONT_UI}`; ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left'; ctx.fillText('09:41', 44, 46); ctx.textAlign = 'right'; ctx.fillText('82%', w - 44, 46);
+  drawMooxLogo(ctx, w / 2, 150, 70, '#ffffff');
+  ctx.textAlign = 'center';
+  ctx.font = `500 28px ${FONT_UI}`; ctx.fillStyle = 'rgba(255,255,255,.75)'; ctx.fillText('Terhubung ke', w / 2, 300);
+  drawWordmark(ctx, w / 2, 350, 46, 'AXELA');
+  // ilustrasi kacamata
+  ctx.save(); ctx.translate(w / 2, 520); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 12; ctx.fillStyle = 'rgba(120,200,255,.25)';
+  for (const sx of [-1, 1]) { ctx.beginPath(); ctx.roundRect(sx * 95 - 78, -48, 156, 96, 30); ctx.fill(); ctx.stroke(); }
+  ctx.beginPath(); ctx.moveTo(-17, -22); ctx.quadraticCurveTo(0, -36, 17, -22); ctx.stroke(); ctx.restore();
+  const tiles = [['Kamera', '5MP'], ['Baterai', '8 jam'], ['AI Voice', 'Aktif'], ['Galeri', '32 GB']];
+  tiles.forEach(([a, b], i) => {
+    const x = 40 + (i % 2) * ((w - 100) / 2 + 20), y = 660 + Math.floor(i / 2) * 150, tw = (w - 100) / 2;
+    ctx.fillStyle = 'rgba(255,255,255,.12)'; ctx.beginPath(); ctx.roundRect(x, y, tw, 125, 24); ctx.fill();
+    ctx.textAlign = 'left'; ctx.fillStyle = 'rgba(255,255,255,.7)'; ctx.font = `500 24px ${FONT_UI}`; ctx.fillText(a, x + 24, y + 40);
+    ctx.fillStyle = '#fff'; ctx.font = `700 34px ${FONT_UI}`; ctx.fillText(b, x + 24, y + 86);
+  });
+  ctx.textAlign = 'center'; ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.roundRect(60, h - 150, w - 120, 84, 42); ctx.fill();
+  ctx.fillStyle = '#03203f'; ctx.font = `700 30px ${FONT_UI}`; ctx.fillText('Coba Sekarang', w / 2, h - 108);
+}
+function makePhone() {
+  const g = new THREE.Group();
+  const black = new THREE.MeshPhysicalMaterial({ color: 0x0c0d10, roughness: 0.3, metalness: 0.5, clearcoat: 1 });
+  const steel = new THREE.MeshPhysicalMaterial({ color: 0x2a2d33, metalness: 0.9, roughness: 0.3 });
+  // stand: kaki bulat + sandaran miring
+  const foot = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.042, 0.008, 32), steel); foot.position.y = 0.004; foot.castShadow = true; g.add(foot);
+  const back = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.11, 0.006), steel);
+  back.position.set(0, 0.06, -0.012); back.rotation.x = -0.28; back.castShadow = true; g.add(back);
+  const lip = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.012, 0.014), steel); lip.position.set(0, 0.014, 0.012); g.add(lip);
+  // ponsel
+  const pw = 0.074, ph = 0.158, pd = 0.008;
+  const ph_ = new THREE.Group(); ph_.position.set(0, 0.02 + ph / 2 * Math.cos(0.28), 0.006 - ph / 2 * Math.sin(0.28)); ph_.rotation.x = -0.28; g.add(ph_);
+  const body = new THREE.Mesh(new THREE.ExtrudeGeometry(rrShape(pw, ph, 0.011), { depth: pd, bevelEnabled: true, bevelThickness: 0.001, bevelSize: 0.001, bevelSegments: 2, curveSegments: 10 }), black);
+  body.position.z = -pd / 2; body.castShadow = true; ph_.add(body);
+  const c = makeCanvas(540, 1150); drawPhoneUI(c.getContext('2d'), 540, 1150);
+  const scr = new THREE.Mesh(new THREE.ShapeGeometry(rrShape(pw - 0.005, ph - 0.005, 0.009), 10), new THREE.MeshBasicMaterial({ map: toTex(c), toneMapped: false }));
+  // ShapeGeometry UV memakai koordinat shape, normalisasi ke 0..1
+  const uv = scr.geometry.attributes.uv, pp = scr.geometry.attributes.position;
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, pp.getX(i) / (pw - 0.005) + 0.5, pp.getY(i) / (ph - 0.005) + 0.5);
+  scr.position.z = pd / 2 + 0.0012; ph_.add(scr);
+  return g;
+}
+
+function buildAltC() {
+  curGroup = altC;
+  const { W, D, H, slab, rim, bT, sw, sh, bH } = TC;
+  rimMatC = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xf4f8ff, emissiveIntensity: 1.0, roughness: 0.3 });
+  const black = new THREE.MeshStandardMaterial({ color: 0x0b0c0f, roughness: 0.5, metalness: 0.4 });
+
+  // kaki hitam: kolom + plat dasar
+  const col = new THREE.Mesh(new THREE.BoxGeometry(0.14, H - slab, 0.14), black);
+  col.position.set(0, (H - slab) / 2, -0.02); addMesh(col);
+  const basePlate = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.025, 0.46), black);
+  basePlate.position.set(0, 0.0125, -0.02); addMesh(basePlate);
+
+  // meja: slab akrilik putih menyala (rim) + artwork di permukaan
+  // slab meja diwarnai sama seperti gambar alas: tepi atas pakai artwork, depan teal, belakang navy
+  const sideMat = c => new THREE.MeshBasicMaterial({ color: c, toneMapped: false });
+  const slabTop = alt3AlasTex ? new THREE.MeshBasicMaterial({ map: alt3AlasTex, toneMapped: false }) : sideMat(0x0b0d12);
+  slabArtMats = [sideMat(0x014d65), sideMat(0x014d65), slabTop, sideMat(0x000421), sideMat(0x01687f), sideMat(0x000421)];
+  slabC = new THREE.Mesh(new THREE.BoxGeometry(W, slab, D), slabArtMats);
+  slabC.position.set(0, H - slab / 2, 0); addMesh(slabC, true, false);
+  const artMat = alt3AlasTex
+    ? new THREE.MeshBasicMaterial({ map: alt3AlasTex, toneMapped: false })
+    : new THREE.MeshStandardMaterial({ color: 0x0b0d12, roughness: 0.4 });
+  artC = new THREE.Mesh(new THREE.PlaneGeometry(W - 2 * rim, D - 2 * rim), artMat);
+  artC.rotation.x = -Math.PI / 2; artC.position.set(0, H + 0.0008, 0); altC.add(artC);
+
+  // backdrop tegak di tepi belakang meja
+  const bz = -D / 2 - bT / 2;
+  if (alt3BackdropTex) {
+    const img = alt3BackdropTex.image, ia = img.height / img.width, pa = bH / W;
+    if (ia > pa) { alt3BackdropTex.repeat.set(1, pa / ia); alt3BackdropTex.offset.set(0, 1 - pa / ia); }
+    else { alt3BackdropTex.repeat.set(ia / pa, 1); alt3BackdropTex.offset.set((1 - ia / pa) / 2, 0); }
+  }
+  const frontMat = alt3BackdropTex
+    ? new THREE.MeshBasicMaterial({ map: alt3BackdropTex, toneMapped: false })
+    : new THREE.MeshStandardMaterial({ color: 0xf2f3f5, roughness: 0.5 });
+  const bd = new THREE.Mesh(new THREE.BoxGeometry(W, bH, bT), [rimMatC, rimMatC, rimMatC, black, frontMat, black]);
+  bd.position.set(0, H - slab + bH / 2, bz); addMesh(bd);
+  // garis cahaya di sambungan backdrop dan meja
+  const jz = -D / 2 + 0.004;
+  ledStrip([new THREE.Vector3(-W / 2 + 0.01, H + 0.004, jz), new THREE.Vector3(W / 2 - 0.01, H + 0.004, jz)], false, 0xffffff, ledGroupC);
+  const jc = makeCanvas(8, 128), jx = jc.getContext('2d'), jg = jx.createLinearGradient(0, 128, 0, 0);
+  jg.addColorStop(0, 'rgba(255,255,255,.9)'); jg.addColorStop(0.25, 'rgba(255,255,255,.35)'); jg.addColorStop(1, 'rgba(255,255,255,0)');
+  jx.fillStyle = jg; jx.fillRect(0, 0, 8, 128);
+  const wash = new THREE.Mesh(new THREE.PlaneGeometry(W - 0.02, 0.14),
+    new THREE.MeshBasicMaterial({ map: toTex(jc), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
+  wash.position.set(0, H + 0.07, -D / 2 + 0.002); ledGroupC.add(wash);
+
+  // layar di bawah logo artwork
+  const sTop = H - slab + bH * (1 - 0.21), cy = sTop - sh / 2;
+  const fz = bz + bT / 2;
+  const bez = new THREE.Mesh(new THREE.BoxGeometry(sw + 0.014, sh + 0.014, 0.02),
+    new THREE.MeshPhysicalMaterial({ color: 0x050505, roughness: 0.3, metalness: 0.3, clearcoat: 1 }));
+  bez.position.set(0, cy, fz + 0.01); addMesh(bez);
+  screenMeshC = new THREE.Mesh(new THREE.PlaneGeometry(sw, sh), screenMat);
+  screenMeshC.position.set(0, cy, fz + 0.0206); altC.add(screenMeshC);
+
+  // ring cahaya + tiang stand per produk (di area gelap, di belakang label harga)
+  const steel = new THREE.MeshPhysicalMaterial({ color: 0x2a2d33, metalness: 0.9, roughness: 0.3 });
+  ringMat = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false, side: THREE.DoubleSide });
+  ringHalo = new THREE.MeshBasicMaterial({ color: 0xe6f0ff, transparent: true, opacity: 0.18, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
+  const zc = -D / 2 + rim + (D - 2 * rim) * 0.33;
+  for (const [x, kind] of [[-0.25, 'A'], [0.25, 'B']]) {
+    const r = 0.13;
+    const ring = new THREE.Mesh(new THREE.RingGeometry(r - 0.0035, r + 0.0035, 128).rotateX(-Math.PI / 2), ringMat);
+    ring.position.set(x, H + 0.0015, zc); ledGroupC.add(ring);
+    const halo = new THREE.Mesh(new THREE.RingGeometry(r - 0.014, r + 0.014, 128).rotateX(-Math.PI / 2), ringHalo);
+    halo.position.set(x, H + 0.0018, zc); ledGroupC.add(halo);
+    const foot = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.03, 0.006, 32), steel);
+    foot.position.set(x, H + 0.003, zc); addMesh(foot);
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.2, 16), steel);
+    pole.position.set(x, H + 0.1, zc); addMesh(pole);
+    const cradle = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.006, 0.022), steel);
+    cradle.position.set(x, H + 0.203, zc); addMesh(cradle);
+    const gl = makeGlasses({ color: kind === 'A' ? 0x111215 : 0x2a2f38, camera: kind === 'A', tilt: false });
+    gl.position.set(x, H + 0.206 - 0.043 + 0.004, zc + 0.012);
+    gl.rotation.y = -x * 0.5;
+    glassesGroupC.add(gl);
+  }
+  // HP di tengah antara kedua kacamata (aplikasi pendamping)
+  const phone = makePhone();
+  phone.position.set(0, H, zc + 0.01);
+  altC.add(phone);
+  altC.add(glassesGroupC);
+  altC.add(ledGroupC);
+  curGroup = altA;
+}
+
 /* ---------- Lantai & cahaya ---------- */
 const floorMat = new THREE.MeshStandardMaterial({ color: 0xd3d8df, roughness: 0.85 });
 const floor = new THREE.Mesh(new THREE.PlaneGeometry(30, 30), floorMat);
@@ -916,6 +1075,12 @@ const VIEWS = {
     front: { p: [0, 1.55, 5.2], t: [0, 1.35, -0.4] },
     side:  { p: [4.4, 1.5, -0.1], t: [0, 1.15, -0.3] },
     top:   { p: [0, 4.6, 0.02], t: [0, 0.9, 0] }
+  },
+  C: {
+    persp: { p: [1.7, 1.8, 2.25], t: [0, 1.2, -0.2] },
+    front: { p: [0, 1.4, 2.7], t: [0, 1.28, -0.2] },
+    side:  { p: [2.6, 1.4, -0.1], t: [0, 1.2, -0.2] },
+    top:   { p: [0, 3.4, 0.02], t: [0, 0.95, 0] }
   }
 };
 let tween = null, currentAlt = 'A', currentView = 'persp';
@@ -935,11 +1100,13 @@ document.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click'
 }));
 const tg = (id, fn) => { const el = document.getElementById(id); el.addEventListener('click', () => { el.classList.toggle('on'); fn(el.classList.contains('on')); }); };
 tg('tRotate', on => controls.autoRotate = on);
-tg('tGlasses', on => { glassesGroup.visible = on; glassesGroupB.visible = on; });
+tg('tGlasses', on => { glassesGroup.visible = on; glassesGroupB.visible = on; glassesGroupC.visible = on; });
 tg('tDark', on => setTheme(on));
+tg('tWhiteC', on => setAlasWhiteC(on));
 tg('tLed', on => {
-  ledGroup.visible = on; ledGroupB.visible = on;
+  ledGroup.visible = on; ledGroupB.visible = on; ledGroupC.visible = on;
   baseSideMat.emissiveIntensity = on ? 0.9 : 0.05;
+  rimMatC.emissiveIntensity = on ? 1.0 : 0.05;
 });
 document.getElementById('glass').addEventListener('input', e => {
   const v = +e.target.value; document.getElementById('glassVal').textContent = v + '%';
@@ -1059,19 +1226,21 @@ document.getElementById('shot').addEventListener('click', () => {
 });
 const DIMS_TEXT = {
   A: `<b>A · Booth Countertop</b><br>L 120 x D 61 x T 81 cm · backdrop kaca 12 mm<br>Layar 38" 16:9 · LED putih keliling<br>Preview v2 · November 2026`,
+  C: `<b>C · Lightbox Counter</b><br>Meja L 100 x D 53 x T 95 cm · warna mengikuti artwork alas<br>Backdrop L 100 x T 80 cm<br>Layar 27" 16:9 · ring cahaya produk + HP<br>Preview v2 · November 2026`,
   B: `<b>B · Experience Table</b><br>Meja L 160 x D 80 x T 92 cm · top kaca<br>Backdrop L 220 x T 265 cm<br>Layar dinding 70" 16:9 · LED biru keliling<br>Preview v2 · November 2026`
 };
 function setAlt(a) {
   currentAlt = a;
-  altA.visible = a === 'A'; altB.visible = a === 'B';
-  screenMesh = a === 'A' ? screenMeshA : screenMeshB;
+  altA.visible = a === 'A'; altB.visible = a === 'B'; altC.visible = a === 'C';
+  screenMesh = { A: screenMeshA, B: screenMeshB, C: screenMeshC }[a];
   screenMesh.updateWorldMatrix(true, false);
   screenMesh.getWorldPosition(cssScreen.position);
-  cssScreen.scale.setScalar((a === 'A' ? DIM.sw : TB.sw) / 960);
+  cssScreen.scale.setScalar({ A: DIM.sw, B: TB.sw, C: TC.sw }[a] / 960);
   applyScreen();
   document.getElementById('dims').innerHTML = DIMS_TEXT[a];
+  document.getElementById('tWhiteC').style.display = a === 'C' ? '' : 'none';
   document.querySelectorAll('[data-alt]').forEach(x => x.classList.toggle('on', x.dataset.alt === a));
-  key.target.position.set(0, a === 'A' ? 0.3 : 0.8, -0.3);
+  key.target.position.set(0, a === 'A' ? 0.3 : 0.9, -0.3);
   cyanGlow.visible = a === 'A';
   goView(currentView);
 }
@@ -1109,6 +1278,8 @@ function loadUrlTex(url) {
   if (!imgBackdrop && A.backdrop) imgBackdrop = await loadUrlTex(A.backdrop);
   const loadImg = src => new Promise(res => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = src; });
   const loadLogo = async (key, file) => (await loadImg(pick(key, file))) || (A[key] ? await loadImg(A[key]) : null);
+  alt3BackdropTex = (await loadUrlTex(pick('alt3Backdrop', 'img/alt3/backdrop.png'))) || (A.alt3Backdrop ? await loadUrlTex(A.alt3Backdrop) : null);
+  alt3AlasTex = (await loadUrlTex(pick('alt3Alas', 'img/alt3/alas.png'))) || (A.alt3Alas ? await loadUrlTex(A.alt3Alas) : null);
   alt2AlasTex = (await loadUrlTex(pick('alt2Alas', 'img/alt2/alas.png'))) || (A.alt2Alas ? await loadUrlTex(A.alt2Alas) : null);
   alt2BackdropTex = (await loadUrlTex(pick('alt2Backdrop', 'img/alt2/backdrop.png'))) || (A.alt2Backdrop ? await loadUrlTex(A.alt2Backdrop) : null);
   [LOGO.moox, LOGO.axela, LOGO.axaka] = await Promise.all([
@@ -1127,6 +1298,8 @@ function loadUrlTex(url) {
   scene.add(altA);
   buildAltB();
   scene.add(altB);
+  buildAltC();
+  scene.add(altC);
   setAlt('A');
   setTheme(false);
   goView('persp', true);

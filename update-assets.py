@@ -19,6 +19,8 @@ files = {
     "mooAxaka": root / "img" / "moo-axaka.svg",
     "alt2Backdrop": root / "img" / "alt2" / "backdrop.png",
     "alt2Alas": root / "img" / "alt2" / "alas.png",
+    "alt3Backdrop": root / "img" / "alt3" / "backdrop.png",
+    "alt3Alas": root / "img" / "alt3" / "alas.png",
 }
 MIME = {".png": "image/png", ".svg": "image/svg+xml", ".jpg": "image/jpeg"}
 
