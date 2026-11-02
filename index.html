@@ -41,6 +41,12 @@
   .dims { position:fixed; right:16px; bottom:16px; font-size:12px; color:var(--muted); background:var(--glass);
     border:1px solid var(--line); border-radius:12px; padding:10px 12px; backdrop-filter:blur(10px); line-height:1.5; }
   .dims b { color:var(--ink); font-weight:600; }
+  .altbar { position:fixed; top:16px; left:50%; transform:translateX(-50%); z-index:3; display:flex; align-items:center; gap:6px;
+    padding:6px; background:var(--glass); border:1px solid var(--line); border-radius:999px; backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+    box-shadow:0 10px 30px rgba(0,0,0,.12); }
+  .altbar span { font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); padding:0 8px 0 10px; font-weight:600; }
+  .altbar button { border-radius:999px; padding:8px 16px; }
+  @media (max-width:900px) { .altbar { left:auto; right:12px; transform:none; } .altbar span { display:none; } }
   .np { font-size:12px; color:var(--muted); margin-bottom:8px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .np b { color:var(--ink); font-weight:600; }
   #loading { position:fixed; inset:0; display:grid; place-items:center; font-size:13px; color:var(--muted); background:inherit; z-index:10; transition:opacity .4s; }
@@ -85,7 +91,7 @@
     <button id="tLed" class="on">Lampu LED</button>
   </div>
 
-  <h4>Kaca backdrop <span id="glassVal" style="float:right">80%</span></h4>
+  <h4>Transparansi kaca <span id="glassVal" style="float:right">80%</span></h4>
   <input type="range" id="glass" min="30" max="100" value="80" style="width:100%;accent-color:var(--accent)">
 
   <h4>Playlist TV</h4>
@@ -111,12 +117,13 @@
   <p class="note" id="srvNote" style="display:none;color:#d9480f">Gambar di folder img belum terbaca. Jalankan <code>python3 update-assets.py</code> di folder ini untuk membuat img/assets.js, lalu muat ulang halaman.</p>
 </div>
 
-<div class="dims">
-  <b>Perkiraan dimensi</b><br>
-  L 120 x D 61 x T 81 cm · backdrop kaca 12 mm<br>
-  Layar 38" 16:9 · LED putih keliling<br>
-  Preview v1 · November 2026
+<div class="altbar">
+  <span>Preview alternatif</span>
+  <button data-alt="A" class="on">A · Booth Countertop</button>
+  <button data-alt="B">B · Experience Table</button>
 </div>
+
+<div class="dims" id="dims"></div>
 
 <script type="module">
 import * as THREE from 'three';
@@ -188,8 +195,22 @@ function toTex(canvas) {
 }
 function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 
-/* Logo "moox": teks "moo" + tanda X */
+/* Logo resmi dari img/*.svg (dimuat saat init). Kalau tidak ada, pakai versi gambar kode. */
+const LOGO = { moox: null, axela: null, axaka: null };
+function drawLogoImg(ctx, img, cx, cy, h, align = 'center') {
+  const w = h * img.naturalWidth / img.naturalHeight || h * (img.width / img.height);
+  const x = align === 'center' ? cx - w / 2 : align === 'left' ? cx : cx - w;
+  ctx.drawImage(img, x, cy - h / 2, w, h);
+  return w;
+}
+/* Logo "moox" */
 function drawMooxLogo(ctx, cx, cy, size, color = '#fff', align = 'center') {
+  if (LOGO.moox) {
+    ctx.save();
+    const m = /rgba\([^)]*,\s*([\d.]+)\)/.exec(color); if (m) ctx.globalAlpha *= +m[1];
+    const w = drawLogoImg(ctx, LOGO.moox, cx, cy, size * 0.8, align);
+    ctx.restore(); return w;
+  }
   ctx.save();
   ctx.font = `900 ${size}px ${FONT_LOGO}`;
   ctx.textBaseline = 'middle';
@@ -210,6 +231,8 @@ function drawMooxLogo(ctx, cx, cy, size, color = '#fff', align = 'center') {
 }
 /* Wordmark produk: "moo" + NAMA */
 function drawWordmark(ctx, cx, cy, size, name, color = '#fff') {
+  const img = name === 'AXELA' ? LOGO.axela : name === 'AXAKA' ? LOGO.axaka : null;
+  if (img) return drawLogoImg(ctx, img, cx, cy, size * 0.9);
   ctx.save();
   ctx.font = `900 ${size}px ${FONT_LOGO}`;
   const mw = ctx.measureText('moo').width;
@@ -389,9 +412,14 @@ function drawScreen(t) {
     ctx.font = `500 30px ${FONT_UI}`; ctx.fillStyle = 'rgba(255,255,255,.8)'; ctx.textAlign = 'center';
     ctx.fillText(sl.sub, w / 2, h * 0.68 + lift);
   } else {
-    drawMooxLogo(ctx, w / 2, h * 0.26 + lift, 46, 'rgba(255,255,255,.85)');
-    ctx.font = `800 128px ${FONT_LOGO}`; ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.letterSpacing = '10px'; ctx.fillText(sl.name, w / 2, h * 0.5 + lift); ctx.letterSpacing = '0px';
+    if (LOGO.axela && LOGO.axaka) {
+      drawWordmark(ctx, w / 2, h * 0.46 + lift, 96, sl.name);
+    } else {
+      drawMooxLogo(ctx, w / 2, h * 0.26 + lift, 46, 'rgba(255,255,255,.85)');
+      ctx.font = `800 128px ${FONT_LOGO}`; ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.letterSpacing = '10px'; ctx.fillText(sl.name, w / 2, h * 0.5 + lift); ctx.letterSpacing = '0px';
+    }
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.font = `500 24px ${FONT_UI}`; ctx.fillStyle = 'rgba(255,255,255,.78)';
     ctx.fillText(sl.sub, w / 2, h * 0.7 + lift);
   }
@@ -402,10 +430,12 @@ function drawScreen(t) {
 
 /* ---------- Geometri ---------- */
 const meshes = [];
-function addMesh(m, cast = true, receive = true) { m.castShadow = cast; m.receiveShadow = receive; scene.add(m); meshes.push(m); return m; }
+const altA = new THREE.Group(), altB = new THREE.Group();
+let curGroup = altA;   // grup tempat builder menambahkan objek
+function addMesh(m, cast = true, receive = true) { m.castShadow = cast; m.receiveShadow = receive; curGroup.add(m); meshes.push(m); return m; }
 
 let backdropTexDefault, topTexDefault, screenTexDefault;
-let backdropMat, topMat, screenMat, baseSideMat, screenMesh, cssScreen;
+let backdropMat, topMat, screenMat, baseSideMat, screenMesh, cssScreen, screenMeshA, screenMeshB, glassTopMat, pedestalMat;
 const holeMat = new THREE.MeshBasicMaterial({ color: 0x000000, opacity: 0, blending: THREE.NoBlending, toneMapped: false, fog: false });
 const screenOffMat = new THREE.MeshBasicMaterial({ color: 0x030303, toneMapped: false });
 const glassesGroup = new THREE.Group();
@@ -452,12 +482,25 @@ const ledCore = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false
 const ledHalo1 = new THREE.MeshBasicMaterial({ color: 0xeaf4ff, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
 const ledHalo2 = new THREE.MeshBasicMaterial({ color: 0xdfeeff, transparent: true, opacity: 0.07, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
 const riserGlowMat = new THREE.MeshBasicMaterial({ color: 0xf6f9ff, toneMapped: false });
-function ledStrip(points, closed = false) {
+const ledMatCache = { 0xffffff: [ledCore, ledHalo1, ledHalo2] };
+function ledMats(color) {
+  if (!ledMatCache[color]) {
+    const c = new THREE.Color(color);
+    ledMatCache[color] = [
+      new THREE.MeshBasicMaterial({ color: c.clone().lerp(new THREE.Color(0xffffff), 0.35), toneMapped: false }),
+      new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }),
+      new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.12, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false })
+    ];
+  }
+  return ledMatCache[color];
+}
+function ledStrip(points, closed = false, color = 0xffffff, group = ledGroup) {
+  const [mCore, mH1, mH2] = ledMats(color);
   const curve = new THREE.CatmullRomCurve3(points, closed, 'centripetal');
   const seg = Math.max(64, points.length * 4);
-  ledGroup.add(new THREE.Mesh(new THREE.TubeGeometry(curve, seg, 0.0032, 8, closed), ledCore));
-  ledGroup.add(new THREE.Mesh(new THREE.TubeGeometry(curve, seg, 0.010, 10, closed), ledHalo1));
-  ledGroup.add(new THREE.Mesh(new THREE.TubeGeometry(curve, seg, 0.024, 12, closed), ledHalo2));
+  group.add(new THREE.Mesh(new THREE.TubeGeometry(curve, seg, 0.0032, 8, closed), mCore));
+  group.add(new THREE.Mesh(new THREE.TubeGeometry(curve, seg, 0.010, 10, closed), mH1));
+  group.add(new THREE.Mesh(new THREE.TubeGeometry(curve, seg, 0.024, 12, closed), mH2));
 }
 function arcPts(cx, cy, r, a0, a1, n, map) {
   const out = [];
@@ -505,7 +548,7 @@ function buildLeds() {
   const pl1 = new THREE.PointLight(0xffffff, 0.5, 1.0, 2); pl1.position.set(-W / 2 - 0.05, 0.4, -D + 0.05);
   const pl2 = pl1.clone(); pl2.position.x = W / 2 + 0.05;
   ledGroup.add(pl1, pl2);
-  scene.add(ledGroup);
+  curGroup.add(ledGroup);
 }
 
 function buildBackdrop() {
@@ -545,7 +588,7 @@ function buildScreen() {
   screenMat = new THREE.MeshBasicMaterial({ map: screenTexDefault, toneMapped: false });
   screenMesh = new THREE.Mesh(new THREE.PlaneGeometry(sw, sh), screenMat);
   screenMesh.position.set(0, cy, bz + depth / 2 + 0.0006);
-  scene.add(screenMesh);
+  curGroup.add(screenMesh);
   // video tampil lewat "lubang" transparan di canvas WebGL, benda di depannya tetap menutupi
   cssScreen = new CSS3DObject(document.getElementById('tvVideo'));
   cssScreen.position.copy(screenMesh.position);
@@ -612,7 +655,7 @@ function rrShape(w, h, r) {
   s.lineTo(x, y + r); s.quadraticCurveTo(x, y, x + r, y);
   return s;
 }
-function makeGlasses({ color, camera: hasCam }) {
+function makeGlasses({ color, camera: hasCam, tilt = true }) {
   const g = new THREE.Group();
   const frameMat = new THREE.MeshPhysicalMaterial({ color, roughness: 0.38, clearcoat: 0.7, clearcoatRoughness: 0.25 });
   const lensMat = new THREE.MeshPhysicalMaterial({ color: 0x0c1a24, roughness: 0.04, transparent: true, opacity: 0.55, clearcoat: 1, side: THREE.DoubleSide });
@@ -633,7 +676,7 @@ function makeGlasses({ color, camera: hasCam }) {
     pivot.position.set(sd * (gap / 2 + ow - 0.004), hingeY, -dep / 2);
     pivot.rotation.order = 'YXZ';
     pivot.rotation.y = -sd * 0.05;
-    pivot.rotation.x = -Math.atan(hingeY / L);
+    pivot.rotation.x = tilt ? -Math.atan(hingeY / L) : 0;
     const thick = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.016, 0.06), frameMat);
     thick.position.z = -0.03; thick.castShadow = true;
     const thin = new THREE.Mesh(new THREE.BoxGeometry(0.005, 0.009, L - 0.055), frameMat);
@@ -659,7 +702,178 @@ function buildGlasses() {
     gl.rotation.y = -r.side * 0.12;
     glassesGroup.add(gl);
   }
-  scene.add(glassesGroup);
+  curGroup.add(glassesGroup);
+}
+
+/* ================= ALTERNATIF B: Experience Table =================
+   Meja kaca berkaki stainless, panel display di bawah kaca, LED biru keliling,
+   pedestal akrilik menyala + stand bening, tablet "Coba Sekarang", layar dinding besar. */
+const TB = { W: 1.6, D: 0.8, H: 0.92, apron: 0.1, leg: 0.07, wallW: 2.2, wallH: 2.2 * 1056 / 876, wallT: 0.14, wallZ: -0.95, sw: 1.55, sh: 1.55 * 9 / 16, sBottom: 1.2 };
+const ledGroupB = new THREE.Group();
+const glassesGroupB = new THREE.Group();
+const LED_BLUE = 0x3f8cff;
+let alt2BackdropTex = null, alt2BackdropMat, alt2AlasTex = null;
+const ceilingLeds = new THREE.Group();   // disembunyikan saat tampak atas
+
+function drawInsetPanel(ctx, w, h, name, lines) {
+  let g = ctx.createLinearGradient(0, 0, w, h);
+  g.addColorStop(0, '#020818'); g.addColorStop(1, '#06264a');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+  ctx.strokeStyle = 'rgba(80,170,255,.12)'; ctx.lineWidth = 2;
+  for (let x = 0; x < w; x += 48) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
+  for (let y = 0; y < h; y += 48) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+  const r = ctx.createRadialGradient(w * 0.5, h * 0.45, 10, w * 0.5, h * 0.45, w * 0.55);
+  r.addColorStop(0, 'rgba(40,160,255,.35)'); r.addColorStop(1, 'rgba(40,160,255,0)');
+  ctx.fillStyle = r; ctx.fillRect(0, 0, w, h);
+  ctx.strokeStyle = 'rgba(120,200,255,.8)'; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.roundRect(14, 14, w - 28, h - 28, 18); ctx.stroke();
+  drawWordmark(ctx, w / 2, h * 0.56, 54, name);
+  ctx.font = `500 22px ${FONT_UI}`; ctx.fillStyle = 'rgba(210,235,255,.85)'; ctx.textAlign = 'center';
+  ctx.fillText(lines, w / 2, h * 0.65);
+}
+function drawTablet(ctx, w, h, title) {
+  let g = ctx.createLinearGradient(0, 0, 0, h);
+  g.addColorStop(0, '#071a3d'); g.addColorStop(1, '#0b4c8c');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+  drawMooxLogo(ctx, 40, 50, 34, 'rgba(255,255,255,.9)', 'left');
+  ctx.font = `800 54px ${FONT_LOGO}`; ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(title, w / 2, h * 0.24);
+  // ilustrasi kacamata
+  ctx.save(); ctx.translate(w / 2, h * 0.52);
+  ctx.strokeStyle = '#0b0d12'; ctx.fillStyle = 'rgba(120,180,230,.35)'; ctx.lineWidth = 16;
+  for (const sx of [-1, 1]) { ctx.beginPath(); ctx.roundRect(sx * 130 - 105, -60, 210, 125, 40); ctx.fill(); ctx.stroke(); }
+  ctx.beginPath(); ctx.moveTo(-25, -30); ctx.quadraticCurveTo(0, -48, 25, -30); ctx.stroke();
+  ctx.restore();
+  ctx.font = `600 26px ${FONT_UI}`;
+  [['Axela', w * 0.3], ['Axaka', w * 0.7]].forEach(([t, x]) => {
+    ctx.fillStyle = 'rgba(255,255,255,.12)'; ctx.strokeStyle = 'rgba(160,210,255,.7)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.roundRect(x - 120, h * 0.8 - 34, 240, 68, 34); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#fff'; ctx.fillText(t, x, h * 0.8);
+  });
+}
+function drawSign(ctx, w, h) {
+  ctx.fillStyle = '#f4f7fb'; ctx.fillRect(0, 0, w, h);
+  ctx.fillStyle = '#0b1224'; ctx.font = `800 64px ${FONT_LOGO}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.letterSpacing = '4px'; ctx.fillText('PREVIEW & COBA SEKARANG', w / 2, h / 2 + 4); ctx.letterSpacing = '0px';
+}
+function roundRectPts(cx, cz, w, d, r, y, n = 6) {
+  const pts = [], V = (x, z) => new THREE.Vector3(x, y, z);
+  for (const [x0, z0, a0] of [[cx + w / 2 - r, cz + d / 2 - r, Math.PI / 2], [cx + w / 2 - r, cz - d / 2 + r, 0], [cx - w / 2 + r, cz - d / 2 + r, -Math.PI / 2], [cx - w / 2 + r, cz + d / 2 - r, -Math.PI]]) {
+    for (let i = 0; i <= n; i++) { const a = a0 - (Math.PI / 2) * i / n; pts.push(V(x0 + Math.cos(a) * r, z0 + Math.sin(a) * r)); }
+  }
+  return pts;
+}
+function makeTablet(title) {
+  const g = new THREE.Group();
+  const black = new THREE.MeshPhysicalMaterial({ color: 0x0b0c0f, roughness: 0.35, metalness: 0.4, clearcoat: 0.8 });
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.06, 0.012, 32), black); base.position.y = 0.006; base.castShadow = true; g.add(base);
+  const stem = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.11, 0.016), black); stem.position.set(0, 0.06, -0.01); stem.rotation.x = -0.25; stem.castShadow = true; g.add(stem);
+  const tab = new THREE.Group(); tab.position.set(0, 0.16, -0.02); tab.rotation.x = -0.55; g.add(tab);
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.27, 0.19, 0.009), black); body.castShadow = true; tab.add(body);
+  const c = makeCanvas(1040, 720); drawTablet(c.getContext('2d'), 1040, 720, title);
+  const scr = new THREE.Mesh(new THREE.PlaneGeometry(0.25, 0.17), new THREE.MeshBasicMaterial({ map: toTex(c), toneMapped: false }));
+  scr.position.z = 0.0047; tab.add(scr);
+  return g;
+}
+
+function buildAltB() {
+  curGroup = altB;
+  const { W, D, H, apron, leg } = TB;
+  const steel = new THREE.MeshPhysicalMaterial({ color: 0x9aa3ad, metalness: 0.92, roughness: 0.3, clearcoat: 0.3 });
+  const darkSteel = new THREE.MeshStandardMaterial({ color: 0x1d2128, metalness: 0.7, roughness: 0.45 });
+
+  // kaki
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(leg, H - apron, leg), steel);
+    m.position.set(sx * (W / 2 - leg / 2 - 0.03), (H - apron) / 2, sz * (D / 2 - leg / 2 - 0.03)); addMesh(m);
+  }
+  // rangka apron stainless
+  const t = 0.03, ay = H - 0.012 - apron / 2;
+  for (const sz of [-1, 1]) { const m = new THREE.Mesh(new THREE.BoxGeometry(W, apron, t), steel); m.position.set(0, ay, sz * (D / 2 - t / 2)); addMesh(m); }
+  for (const sx of [-1, 1]) { const m = new THREE.Mesh(new THREE.BoxGeometry(t, apron, D - 2 * t), steel); m.position.set(sx * (W / 2 - t / 2), ay, 0); addMesh(m); }
+  // nampan gelap di bawah kaca
+  const tray = new THREE.Mesh(new THREE.BoxGeometry(W - 2 * t, 0.02, D - 2 * t), darkSteel);
+  tray.position.set(0, H - 0.042, 0); addMesh(tray);
+  // artwork meja dari img/alt2/alas.png (di bawah kaca); kalau tidak ada, pakai panel buatan kode
+  if (alt2AlasTex) {
+    const art = new THREE.Mesh(new THREE.PlaneGeometry(W - 2 * t, D - 2 * t), new THREE.MeshBasicMaterial({ map: alt2AlasTex, toneMapped: false }));
+    art.rotation.x = -Math.PI / 2; art.position.set(0, H - 0.031, 0); altB.add(art);
+  } else [[-0.4, 'AXELA', 'AI Smart Glasses  ·  5MP  ·  32 GB'], [0.4, 'AXAKA', 'Open-ear Audio  ·  ENC  ·  Bluetooth 6']].forEach(([x, name, line]) => {
+    const c = makeCanvas(1024, 680); drawInsetPanel(c.getContext('2d'), 1024, 680, name, line);
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(0.68, 0.45), new THREE.MeshBasicMaterial({ map: toTex(c), toneMapped: false }));
+    m.rotation.x = -Math.PI / 2; m.position.set(x, H - 0.031, -0.02); altB.add(m);
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.004, 0.47), steel); frame.position.set(x, H - 0.0335, -0.02); addMesh(frame);
+  });
+  // top kaca
+  glassTopMat = new THREE.MeshPhysicalMaterial({ color: 0xbcd8e0, transparent: true, opacity: 0.3, roughness: 0.03, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.03 });
+  const glass = new THREE.Mesh(new THREE.BoxGeometry(W + 0.01, 0.012, D + 0.01), glassTopMat);
+  glass.position.y = H - 0.006; glass.renderOrder = 2; altB.add(glass);
+  // LED biru keliling tepi meja
+  ledStrip(roundRectPts(0, 0, W + 0.008, D + 0.008, 0.01, H - 0.022, 3), true, LED_BLUE, ledGroupB);
+
+  // pedestal akrilik menyala + stand bening + kacamata
+  // pedestal hitam glossy, garis LED di tepi atas tetap menyala
+  pedestalMat = new THREE.MeshPhysicalMaterial({ color: 0x0a0b0e, emissive: 0x000000, roughness: 0.25, metalness: 0.3, clearcoat: 1, clearcoatRoughness: 0.08 });
+  const acrylic = new THREE.MeshPhysicalMaterial({ color: 0xffffff, transparent: true, opacity: 0.28, roughness: 0.02, clearcoat: 1, side: THREE.DoubleSide });
+  // dua baris: depan (dekat pengunjung) dan belakang, tablet dipindah ke tepi belakang
+  const peds = [[-0.5, 0.17, 'A'], [-0.2, -0.08, 'A'], [0.2, -0.08, 'B'], [0.5, 0.17, 'B']];
+  for (const [x, z, kind] of peds) {
+    const pw = 0.2, ph = 0.035;
+    const ped = new THREE.Mesh(new THREE.BoxGeometry(pw, ph, pw), pedestalMat);
+    ped.position.set(x, H + ph / 2, z); addMesh(ped, false, true);
+    ledStrip(roundRectPts(x, z, pw, pw, 0.006, H + ph + 0.0005, 2), true, 0xbcd6ff, ledGroupB);
+    const plate = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.13, 0.01), acrylic);
+    plate.position.set(x, H + ph + 0.065, z - 0.02); altB.add(plate);
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.008, 0.035), acrylic);
+    bar.position.set(x, H + ph + 0.134, z - 0.02); altB.add(bar);
+    const gl = makeGlasses({ color: kind === 'A' ? 0x111215 : 0x2a2f38, camera: kind === 'A', tilt: false });
+    gl.position.set(x, H + ph + 0.138 - 0.043 + 0.004, z - 0.005);
+    gl.rotation.y = -x * 0.25;
+    glassesGroupB.add(gl);
+  }
+  altB.add(glassesGroupB);
+
+  // tablet + papan nama
+  const t1 = makeTablet('COBA SEKARANG'); t1.position.set(-0.6, H, -0.26); t1.rotation.y = 0.25; altB.add(t1);
+  const t2 = makeTablet('COBA SEKARANG'); t2.position.set(0.6, H, -0.26); t2.rotation.y = -0.25; altB.add(t2);
+  const sc = makeCanvas(1400, 220); drawSign(sc.getContext('2d'), 1400, 220);
+  const sign = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.05, 0.006),
+    [acrylic, acrylic, acrylic, acrylic, new THREE.MeshStandardMaterial({ map: toTex(sc), roughness: 0.4 }), acrylic]);
+  // kalau artwork meja dipakai, papan nama pindah ke tengah belakang agar tidak menutupi QR dan label harga
+  sign.position.set(0, H + 0.028, alt2AlasTex ? -0.3 : 0.3); sign.rotation.x = -0.35; addMesh(sign);
+
+  // dinding + layar besar
+  // dinding: sisi depan memakai img/alt2/backdrop.png (rasio 876 x 1056)
+  const wallSide = new THREE.MeshStandardMaterial({ color: 0x14171c, roughness: 0.7, metalness: 0.2 });
+  alt2BackdropMat = alt2BackdropTex
+    ? new THREE.MeshBasicMaterial({ map: alt2BackdropTex, toneMapped: false })   // warna artwork apa adanya
+    : new THREE.MeshStandardMaterial({ color: 0x14171c, roughness: 0.7 });
+  const wall = new THREE.Mesh(new THREE.BoxGeometry(TB.wallW, TB.wallH, TB.wallT), [wallSide, wallSide, wallSide, wallSide, alt2BackdropMat, wallSide]);
+  wall.position.set(0, TB.wallH / 2, TB.wallZ); addMesh(wall);
+  const wf = TB.wallZ + TB.wallT / 2;
+  const bez = new THREE.Mesh(new THREE.BoxGeometry(TB.sw + 0.04, TB.sh + 0.04, 0.04),
+    new THREE.MeshPhysicalMaterial({ color: 0x050505, roughness: 0.3, metalness: 0.3, clearcoat: 1 }));
+  bez.position.set(0, TB.sBottom + TB.sh / 2, wf + 0.02); addMesh(bez);
+  screenMeshB = new THREE.Mesh(new THREE.PlaneGeometry(TB.sw, TB.sh), screenMat);
+  screenMeshB.position.set(0, TB.sBottom + TB.sh / 2, wf + 0.0406); altB.add(screenMeshB);
+  // logo di atas layar
+  const lc = makeCanvas(512, 160); drawMooxLogo(lc.getContext('2d'), 256, 80, 150, '#ffffff');
+  const logo = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.13), new THREE.MeshBasicMaterial({ map: toTex(lc), transparent: true, toneMapped: false }));
+  logo.position.set(0, TB.sBottom + TB.sh + 0.15, wf + 0.002);
+  if (!alt2BackdropTex) altB.add(logo);   // artwork alt2 sudah berisi logo
+  // LED biru tipis di keliling dinding
+  const z0 = wf + 0.004, hw = TB.wallW / 2 - 0.02;
+  const wy = TB.wallH - 0.02;
+  [[[-hw, 0.02], [-hw, wy]], [[-hw, wy], [hw, wy]], [[hw, wy], [hw, 0.02]]].forEach(([p0, p1]) =>
+    ledStrip([new THREE.Vector3(p0[0], p0[1], z0), new THREE.Vector3(p1[0], p1[1], z0)], false, LED_BLUE, ledGroupB));
+  // lampu linear di plafon (gaya toko)
+  for (const [z, w] of [[0.2, 2.2], [-0.4, 1.6]]) {
+    const y = 2.75, d = 0.9;
+    ledStrip(roundRectPts(0, z, w, d, 0.02, y, 2), true, 0xffffff, ceilingLeds);
+  }
+  ledGroupB.add(ceilingLeds);
+  altB.add(ledGroupB);
+  curGroup = altA;
 }
 
 /* ---------- Lantai & cahaya ---------- */
@@ -671,7 +885,7 @@ const hemi = new THREE.HemisphereLight(0xffffff, 0x8a93a3, 0.7); scene.add(hemi)
 const key = new THREE.DirectionalLight(0xffffff, 1.7);
 key.position.set(1.8, 3.2, 2.6); key.castShadow = true;
 key.shadow.mapSize.set(2048, 2048);
-Object.assign(key.shadow.camera, { left: -1.3, right: 1.3, top: 1.3, bottom: -1.3, near: 0.5, far: 10 });
+Object.assign(key.shadow.camera, { left: -2.2, right: 2.2, top: 2.2, bottom: -2.2, near: 0.5, far: 12 });
 key.shadow.bias = -0.0004; key.shadow.normalBias = 0.02; key.shadow.radius = 4;
 key.target.position.set(0, 0.3, -0.3); scene.add(key, key.target);
 const fill = new THREE.DirectionalLight(0xcfe6ff, 0.45); fill.position.set(-2.5, 1.5, 1.5); scene.add(fill);
@@ -691,14 +905,24 @@ function setTheme(dark) {
 
 /* ---------- Kamera preset ---------- */
 const VIEWS = {
-  persp: { p: [1.35, 0.95, 1.55], t: [0, 0.38, -0.3] },
-  front: { p: [0, 0.52, 2.05], t: [0, 0.42, -0.3] },
-  side:  { p: [2.2, 0.5, -0.3], t: [0, 0.4, -0.3] },
-  top:   { p: [0, 3.3, -0.27], t: [0, 0, -0.32] }
+  A: {
+    persp: { p: [1.35, 0.95, 1.55], t: [0, 0.38, -0.3] },
+    front: { p: [0, 0.52, 2.05], t: [0, 0.42, -0.3] },
+    side:  { p: [2.2, 0.5, -0.3], t: [0, 0.4, -0.3] },
+    top:   { p: [0, 3.3, -0.27], t: [0, 0, -0.32] }
+  },
+  B: {
+    persp: { p: [2.75, 2.0, 3.8], t: [0, 1.15, -0.4] },
+    front: { p: [0, 1.55, 5.2], t: [0, 1.35, -0.4] },
+    side:  { p: [4.4, 1.5, -0.1], t: [0, 1.15, -0.3] },
+    top:   { p: [0, 4.6, 0.02], t: [0, 0.9, 0] }
+  }
 };
-let tween = null;
+let tween = null, currentAlt = 'A', currentView = 'persp';
 function goView(name, instant = false) {
-  const v = VIEWS[name];
+  currentView = name;
+  ceilingLeds.visible = name !== 'top';
+  const v = VIEWS[currentAlt][name];
   const to = { p: new THREE.Vector3(...v.p), t: new THREE.Vector3(...v.t) };
   if (instant) { camera.position.copy(to.p); controls.target.copy(to.t); controls.update(); return; }
   tween = { from: { p: camera.position.clone(), t: controls.target.clone() }, to, start: performance.now(), dur: 900 };
@@ -711,12 +935,16 @@ document.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click'
 }));
 const tg = (id, fn) => { const el = document.getElementById(id); el.addEventListener('click', () => { el.classList.toggle('on'); fn(el.classList.contains('on')); }); };
 tg('tRotate', on => controls.autoRotate = on);
-tg('tGlasses', on => glassesGroup.visible = on);
+tg('tGlasses', on => { glassesGroup.visible = on; glassesGroupB.visible = on; });
 tg('tDark', on => setTheme(on));
-tg('tLed', on => { ledGroup.visible = on; baseSideMat.emissiveIntensity = on ? 0.9 : 0.05; });
+tg('tLed', on => {
+  ledGroup.visible = on; ledGroupB.visible = on;
+  baseSideMat.emissiveIntensity = on ? 0.9 : 0.05;
+});
 document.getElementById('glass').addEventListener('input', e => {
   const v = +e.target.value; document.getElementById('glassVal').textContent = v + '%';
   backdropMat.opacity = v / 100;
+  glassTopMat.opacity = 0.08 + 0.4 * (v - 30) / 70;
 });
 let slideshow = true, customScreen = null, screenOn = true, screenMode = 'canvas';
 /* Mode layar: 'video' = elemen <video> asli di layer CSS3D (tidak diblokir di file://),
@@ -829,6 +1057,26 @@ document.getElementById('shot').addEventListener('click', () => {
   if (screenMesh.material !== prev) { screenMesh.material.dispose(); screenMesh.material = prev; }
   if (tmpTex) tmpTex.dispose();
 });
+const DIMS_TEXT = {
+  A: `<b>A · Booth Countertop</b><br>L 120 x D 61 x T 81 cm · backdrop kaca 12 mm<br>Layar 38" 16:9 · LED putih keliling<br>Preview v2 · November 2026`,
+  B: `<b>B · Experience Table</b><br>Meja L 160 x D 80 x T 92 cm · top kaca<br>Backdrop L 220 x T 265 cm<br>Layar dinding 70" 16:9 · LED biru keliling<br>Preview v2 · November 2026`
+};
+function setAlt(a) {
+  currentAlt = a;
+  altA.visible = a === 'A'; altB.visible = a === 'B';
+  screenMesh = a === 'A' ? screenMeshA : screenMeshB;
+  screenMesh.updateWorldMatrix(true, false);
+  screenMesh.getWorldPosition(cssScreen.position);
+  cssScreen.scale.setScalar((a === 'A' ? DIM.sw : TB.sw) / 960);
+  applyScreen();
+  document.getElementById('dims').innerHTML = DIMS_TEXT[a];
+  document.querySelectorAll('[data-alt]').forEach(x => x.classList.toggle('on', x.dataset.alt === a));
+  key.target.position.set(0, a === 'A' ? 0.3 : 0.8, -0.3);
+  cyanGlow.visible = a === 'A';
+  goView(currentView);
+}
+document.querySelectorAll('[data-alt]').forEach(b => b.addEventListener('click', () => setAlt(b.dataset.alt)));
+
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
@@ -859,6 +1107,12 @@ function loadUrlTex(url) {
   const pick = (name, png) => (isFile && A[name]) ? A[name] : png;
   let [imgBackdrop, imgAlas] = await Promise.all([loadUrlTex(pick('backdrop', 'img/backdrop.png')), loadUrlTex(pick('alas', 'img/alas.png'))]);
   if (!imgBackdrop && A.backdrop) imgBackdrop = await loadUrlTex(A.backdrop);
+  const loadImg = src => new Promise(res => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = src; });
+  const loadLogo = async (key, file) => (await loadImg(pick(key, file))) || (A[key] ? await loadImg(A[key]) : null);
+  alt2AlasTex = (await loadUrlTex(pick('alt2Alas', 'img/alt2/alas.png'))) || (A.alt2Alas ? await loadUrlTex(A.alt2Alas) : null);
+  alt2BackdropTex = (await loadUrlTex(pick('alt2Backdrop', 'img/alt2/backdrop.png'))) || (A.alt2Backdrop ? await loadUrlTex(A.alt2Backdrop) : null);
+  [LOGO.moox, LOGO.axela, LOGO.axaka] = await Promise.all([
+    loadLogo('logoMoox', 'img/logo-moox.svg'), loadLogo('mooAxela', 'img/moo-axela.svg'), loadLogo('mooAxaka', 'img/moo-axaka.svg')]);
   if (!imgAlas && A.alas) imgAlas = await loadUrlTex(A.alas);
   if (imgBackdrop) backdropTexDefault = imgBackdrop;
   else { const bc = makeCanvas(2048, 1113); drawBackdrop(bc.getContext('2d'), 2048, 1536); backdropTexDefault = toTex(bc); }
@@ -867,7 +1121,13 @@ function loadUrlTex(url) {
   if (!imgBackdrop || !imgAlas) document.getElementById('srvNote').style.display = 'block';
   drawScreen(0); screenTexDefault = toTex(screenCanvas);
 
+  curGroup = altA;
   buildBase(); buildBackdrop(); buildScreen(); buildRisers(); buildGlasses(); buildLeds();
+  screenMeshA = screenMesh;
+  scene.add(altA);
+  buildAltB();
+  scene.add(altB);
+  setAlt('A');
   setTheme(false);
   goView('persp', true);
   startPlaylist();
